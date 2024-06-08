@@ -7,6 +7,7 @@
 #include <openssl/engine.h>
 #include <openssl/err.h>
 #include <openssl/crypto.h>
+#include <openssl/rand.h>
 
 
 #include <openssl/core_names.h>

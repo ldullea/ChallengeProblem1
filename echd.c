@@ -12,7 +12,8 @@
 # include "header.h" // Include neccecary openssl libraries
 
 // Struct object used to store information for a single Peer
-typedef struct peer_data_st {
+typedef struct peer_data_st 
+{
     const char *name;               /* name of peer */
     const char *curvename;          /* The shared curve name */
     EVP_PKEY *priv;                 /* private keypair */
@@ -57,7 +58,7 @@ static int get_peer_public_key(PEER_DATA *peer, OSSL_LIB_CTX *libctx)
     return ret;
 }
 
-// This function uses peer dadta and generates a new key pair for ECC
+// This function uses peer data and generates a new key pair for ECC
 static int create_peer(PEER_DATA *peer, OSSL_LIB_CTX *libctx)
 {
     // Variables
@@ -144,47 +145,80 @@ cleanup:
     return 0;
 }
 
+
 int gen_random()
 {
-    int rc = 0;
-    unsigned long err = 0;
- 
-    OPENSSL_cpuid_setup();
-    ENGINE_load_rdrand();
+    int num_bytes = 256; //define number of bytes to be used
+    unsigned int rnum = 0;
 
-    ENGINE* eng = ENGINE_by_id("rdrand");
-    err = ERR_get_error();
+    // initialize openssl rand buffer
+    unsigned char buffer[num_bytes];
 
-    if(NULL == eng) {
-        fprintf(stderr, "ENGINE_load_rdrand failed, err = 0x%lx\n", err);
-        abort(); /* failed */
+    // Generate random bytes
+    RAND_bytes(buffer, num_bytes);
+
+    // check RAND status
+    if (RAND_status() != 1) {
+        return -1; // fail
     }
 
-    rc = ENGINE_init(eng);
-    err = ERR_get_error();
-
-    if(0 == rc) {
-        fprintf(stderr, "ENGINE_init failed, err = 0x%lx\n", err);
-        abort(); /* failed */
+    // Convert the random bytes to an integer
+    for (int i = 0; i < num_bytes; ++i) 
+    {
+       rnum = (rnum << 8) | buffer[i];
     }
-  
-    rc = ENGINE_set_default(eng, ENGINE_METHOD_RAND);
-    err = ERR_get_error();
+    printf("Code got here");
+    printf("Random num: %u", rnum);
+    printf("\n");
 
-    if(0 == rc) {
-        fprintf(stderr, "ENGINE_set_default failed, err = 0x%lx\n", err);
-        abort(); /* failed */
-    }
-
-   /* OK to proceed */
 }
 
 int main ()
 {
-    int rnum = gen_random();
+    //Initialize a return value
+    int ret_val = 1;
 
+    unsigned int rnum = gen_random();
 
-    return 0;
+    // Initialise the 2 peers
+    PEER_DATA peer1 = {"peer 1", "P-256"};
+    PEER_DATA peer2 = {"peer 2", "P-256"};
+
+    // setting libctx to null makes the library use default contex
+    OSSL_LIB_CTX *libctx = NULL;
+
+    // Each peer creates a keypair
+    if (!create_peer(&peer1, libctx) || !create_peer(&peer2, libctx)) 
+    {
+        fprintf(stderr, "Create peer failed\n");
+        goto cleanup;
+    }
+
+    if (!generate_secret(&peer1, peer2.pub, libctx) || !generate_secret(&peer2, peer1.pub, libctx)) 
+    {
+        fprintf(stderr, "Generate secrets failed\n");
+        goto cleanup;
+    }
+
+    // or illustrative purposes demonstrate that the derived secrets are equal 
+    if (peer1.secretlen != peer2.secretlen || CRYPTO_memcmp(peer1.secret, peer2.secret, peer1.secretlen) != 0) 
+    {
+        fprintf(stderr, "Derived secrets do not match\n");
+        goto cleanup;
+    } 
+    else {
+        fprintf(stdout, "Derived secrets match\n");
+    }
+
+    // Passed all tests, update return value
+    ret_val = 0;
+
+    cleanup:
+    if (ret_val != EXIT_SUCCESS)
+        ERR_print_errors_fp(stderr);
+    destroy_peer(&peer2);
+    destroy_peer(&peer1);
+    return ret_val;
 }
 
 /*
